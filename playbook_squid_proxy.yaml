@@ -1,8 +1,16 @@
 ---
-- name: Set up Squid Proxy with Basic Authentication
+- name: Gather user input
   hosts: localhost
+  tags: always
   become: yes
+  vars:
+    defaults:
+      target_host: localhost
+      username: squid
   tasks:
+    - name: Gather user input
+      include_tasks: input.yml
+
     - name: Install Squid and Apache2-utils
       apt:
         name:
@@ -24,7 +32,12 @@
           auth_param basic program /usr/lib/squid/basic_ncsa_auth /etc/squid/passwords
           auth_param basic realm proxy
           acl authenticated proxy_auth REQUIRED
+          {% if squid_allowed_hosts | length > 0 %}
+          acl allowed_hosts src {{ squid_allowed_hosts }}
+          http_access allow authenticated allowed_hosts
+          {% else %}
           http_access allow authenticated
+          {% endif %}
 
     - name: Ensure Squid main configuration includes custom configuration
       lineinfile:
@@ -33,26 +46,30 @@
         state: present
         create: yes
 
-    - name: Generate random password for Squid proxy
+    - name: Generate random password for Squid proxy if not provided
       command: openssl rand -base64 12
-      register: squid_password
+      register: generated_password
       changed_when: false
+      when: squid_generate_password | bool
 
-    - name: Store the generated password in a temporary file
+    - name: Set final_squid_password
+      set_fact:
+        final_squid_password: >-
+          {{ generated_password.stdout if squid_generate_password | bool else squid_password }}
+
+    - name: Store the password in a temporary file
       copy:
         dest: /tmp/squid_password
-        content: "{{ squid_password.stdout }}"
+        content: "{{ final_squid_password }}"
         mode: '0600'
 
-    - name: Create Squid password file with the generated password
+    - name: Create Squid password file with the final password
       command: >
-        htpasswd -cb /etc/squid/passwords squid {{ squid_password.stdout }}
-      when: not squid_password is skipped
+        htpasswd -cb /etc/squid/passwords {{ squid_username }} {{ final_squid_password }}
 
     - name: Schedule deletion of the temporary password file after 24 hours
       command: >
         echo "rm -f /tmp/squid_password" | at now + 24 hours
-      when: not squid_password is skipped
 
     - name: Restart Squid service to apply changes
       service:
@@ -60,6 +77,6 @@
         state: restarted
         enabled: yes
 
-    - name: Print the generated password
+    - name: Print the final password
       debug:
-        msg: "The generated Squid proxy password is: {{ squid_password.stdout }}"
+        msg: "The Squid proxy password is: {{ final_squid_password }}. It can be found in /tmp/squid_password for 24h."

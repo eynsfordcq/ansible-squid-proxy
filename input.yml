@@ -1,0 +1,65 @@
+---
+- block:
+    - name: Username prompt
+      pause:
+        prompt: |
+          Enter squid custom username (leave blank to use 'squid'):
+      register: _username
+      when:
+        - username is undefined
+
+    - name: Password prompt
+      pause:
+        prompt: |
+          Enter custom password (leave blank to generate a random one):
+      register: _password
+      when:
+        - password is undefined
+
+    - name: Allowed hosts prompt
+      pause:
+        prompt: |
+          Enter the allowed hosts (comma-separated IPs, hostnames, or CIDR ranges, e.g., 192.168.1.0/24,example.com):
+          Leave blank if none
+      register: _allowed_hosts
+      when: allowed_hosts is undefined
+
+    - name: Set facts based on user input
+      set_fact:
+        squid_username: >-
+          {% if username is defined %}{% set _uname = username %}
+          {%- elif _username.user_input is defined and _username.user_input|length > 0 -%}
+          {%- set _uname = _username.user_input -%}
+          {%- else %}{% set _uname = defaults['username'] %}
+          {%- endif -%}
+          {{ _uname | trim }}
+        
+        squid_password: >-
+          {% if password is defined %}{% set _pass = password %}
+          {%- elif _password.user_input is defined and _password.user_input|length > 0 -%}
+          {%- set _pass = _password.user_input -%}
+          {%- else %}{% set _pass = '' %}
+          {%- endif -%}
+          {{ _pass | trim }}
+        
+        squid_allowed_hosts: >-
+          {% if allowed_hosts is defined %}{% set _hosts = allowed_hosts %}
+          {%- elif _allowed_hosts.user_input is defined and _allowed_hosts.user_input|length > 0 -%}
+          {%- set _hosts = _allowed_hosts.user_input -%}
+          {%- else %}{% set _hosts = '' %}
+          {%- endif -%}
+          {{ _hosts | replace(',', ' ') | trim }}
+      
+    - name: Set conditions based on the facts
+      set_fact:
+        squid_generate_password: >-
+          {{ squid_password | length == 0 | bool }}
+
+    - name: Print summary of all facts
+      debug:
+        msg: |
+          Summary of Facts:
+          - squid_username: {{ squid_username }}
+          - squid_password: {{ squid_password }}
+          - squid_generate_password: {{ squid_generate_password }}
+          - squid_allowed_hosts: {{ squid_allowed_hosts }}
