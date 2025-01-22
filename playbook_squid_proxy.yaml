@@ -16,6 +16,7 @@
         name:
           - squid
           - apache2-utils
+          - at
         state: present
         update_cache: yes
 
